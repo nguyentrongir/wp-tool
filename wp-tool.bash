@@ -1,6 +1,6 @@
 #!/bin/bash
 
-LOGFILE="/var/log/wp-pro-tool.log"
+LOGFILE="/var/log/wp-ultra-tool.log"
 DATE=$(date +"%Y-%m-%d_%H-%M-%S")
 
 log() {
@@ -11,63 +11,46 @@ pause(){
     read -p "Nhan ENTER de tiep tuc..."
 }
 
-backup_site() {
-    read -p "Nhap folder web (vd: /var/www/site): " WEB
-    BACKUP_FILE="/root/backup_site_$DATE.tar.gz"
-    tar -czf $BACKUP_FILE $WEB
-    log "Backup source: $BACKUP_FILE"
-    echo "Backup thanh cong: $BACKUP_FILE"
+read_db_from_wpconfig() {
+    WP="$1/wp-config.php"
+    DB_NAME=$(grep DB_NAME $WP | cut -d"'" -f4)
+    DB_USER=$(grep DB_USER $WP | cut -d"'" -f4)
+    DB_PASS=$(grep DB_PASSWORD $WP | cut -d"'" -f4)
 }
 
-backup_db() {
-    read -p "Nhap ten database: " DB
-    read -p "Nhap user mysql: " USER
-    read -p "Nhap password mysql: " PASS
-    BACKUP_DB="/root/backup_db_$DB_$DATE.sql"
-    mysqldump -u$USER -p$PASS $DB > $BACKUP_DB
-    log "Backup DB: $BACKUP_DB"
-    echo "Backup DB thanh cong: $BACKUP_DB"
-}
+backup_all() {
+    read -p "Nhap folder web: " WEB
+    read_db_from_wpconfig $WEB
 
-create_db() {
-    read -p "Nhap mat khau root mysql: " ROOTPASS
-    read -p "Nhap ten database: " DB
-    read -p "Nhap user: " USER
-    read -p "Nhap password user: " PASS
+    BACKUP_SRC="/root/backup_src_$DATE.tar.gz"
+    BACKUP_DB="/root/backup_db_$DB_NAME_$DATE.sql"
 
-mysql -uroot -p$ROOTPASS <<EOF
-CREATE DATABASE $DB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER '$USER'@'localhost' IDENTIFIED BY '$PASS';
-GRANT ALL PRIVILEGES ON $DB.* TO '$USER'@'localhost';
-FLUSH PRIVILEGES;
-EOF
+    tar -czf $BACKUP_SRC $WEB
+    mysqldump -u$DB_USER -p$DB_PASS $DB_NAME > $BACKUP_DB
 
-log "Tao DB: $DB user: $USER"
-echo "==== THONG TIN DB ===="
-echo "DB: $DB"
-echo "User: $USER"
-echo "Pass: $PASS"
+    log "Backup source + DB: $WEB"
+    echo "Backup OK:"
+    echo $BACKUP_SRC
+    echo $BACKUP_DB
 }
 
 restore_core() {
     read -p "Nhap folder web: " WEB
-    echo "Ban chac chan muon PHUC HOI CORE? (yes/no)"
-    read CONFIRM
-    [[ "$CONFIRM" != "yes" ]] && return
+    echo "Xac nhan PHUC HOI CORE? (yes): "
+    read C
+    [[ "$C" != "yes" ]] && return
 
     cd /tmp || exit
     wget -q https://wordpress.org/latest.tar.gz
     tar -xzf latest.tar.gz
 
-    rm -rf $WEB/wp-admin
-    rm -rf $WEB/wp-includes
-
+    rm -rf $WEB/wp-admin $WEB/wp-includes
     cp -r wordpress/wp-admin $WEB/
     cp -r wordpress/wp-includes $WEB/
     cp wordpress/*.php $WEB/
 
-    log "Restore WP core cho $WEB"
-    echo "Phuc hoi core hoan tat"
+    log "Restore core $WEB"
+    echo "Restore core xong"
 }
 
 harden_wp() {
@@ -78,12 +61,8 @@ harden_wp() {
     chmod 600 $WEB/wp-config.php
     chown -R www-data:www-data $WEB
 
-    sed -i "s/define('DISALLOW_FILE_EDIT'.*/define('DISALLOW_FILE_EDIT', true);/g" $WEB/wp-config.php || true
-    grep -q "DISALLOW_FILE_MODS" $WEB/wp-config.php || sed -i "/<?php/a define('DISALLOW_FILE_MODS', true);" $WEB/wp-config.php
-
-    cat > $WEB/.htaccess <<EOF
+cat > $WEB/.htaccess <<EOF
 <Files xmlrpc.php>
-Order Deny,Allow
 Deny from all
 </Files>
 
@@ -92,62 +71,96 @@ php_flag engine off
 </Directory>
 EOF
 
-    log "Hardening WP cho $WEB"
-    echo "Bao mat WordPress xong"
+    sed -i "/<?php/a define('DISALLOW_FILE_EDIT', true);" $WEB/wp-config.php
+
+    log "Hardening $WEB"
+    echo "Bao mat xong"
 }
 
 random_salt() {
     read -p "Nhap folder web: " WEB
     SALT=$(curl -s https://api.wordpress.org/secret-key/1.1/salt/)
-    sed -i "/AUTH_KEY/d" $WEB/wp-config.php
-    sed -i "/SECURE_AUTH_KEY/d" $WEB/wp-config.php
-    sed -i "/LOGGED_IN_KEY/d" $WEB/wp-config.php
-    sed -i "/NONCE_KEY/d" $WEB/wp-config.php
-    sed -i "/AUTH_SALT/d" $WEB/wp-config.php
-    sed -i "/SECURE_AUTH_SALT/d" $WEB/wp-config.php
-    sed -i "/LOGGED_IN_SALT/d" $WEB/wp-config.php
-    sed -i "/NONCE_SALT/d" $WEB/wp-config.php
+
+    sed -i "/AUTH_KEY/d;/SECURE_AUTH_KEY/d;/LOGGED_IN_KEY/d;/NONCE_KEY/d;/AUTH_SALT/d;/SECURE_AUTH_SALT/d;/LOGGED_IN_SALT/d;/NONCE_SALT/d" $WEB/wp-config.php
     sed -i "/<?php/a $SALT" $WEB/wp-config.php
-    log "Random SALT cho $WEB"
-    echo "Random SALT thanh cong"
+
+    log "Random SALT $WEB"
+    echo "Random SALT OK"
 }
 
-check_permission() {
+scan_virus() {
     read -p "Nhap folder web: " WEB
-    echo "File co quyen sai:"
-    find $WEB -type f ! -perm 644
-    echo "Folder co quyen sai:"
-    find $WEB -type d ! -perm 755
-    pause
+    echo "Dang quet..."
+    grep -R --color -nE "eval\(|base64_decode|gzinflate|shell_exec|passthru|system\(" $WEB > /root/virus_scan_$DATE.txt
+    log "Scan virus $WEB"
+    echo "Ket qua luu: /root/virus_scan_$DATE.txt"
+}
+
+create_vhost() {
+    read -p "Nhap domain: " DOMAIN
+    read -p "Nhap folder web: " WEB
+
+cat > /etc/nginx/sites-available/$DOMAIN <<EOF
+server {
+    listen 80;
+    server_name $DOMAIN www.$DOMAIN;
+    root $WEB;
+    index index.php index.html;
+
+    location / {
+        try_files \$uri \$uri/ /index.php?\$args;
+    }
+
+    location ~ \.php\$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.1-fpm.sock;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EOF
+
+    ln -s /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
+    nginx -t && systemctl reload nginx
+    log "Tao vhost $DOMAIN"
+    echo "Vhost tao xong"
+}
+
+install_ssl() {
+    read -p "Nhap domain: " DOMAIN
+    certbot --nginx -d $DOMAIN -d www.$DOMAIN
+    log "Cai SSL $DOMAIN"
 }
 
 while true
 do
 clear
-echo "===================================="
-echo "     WORDPRESS PRO DEVOPS TOOL"
-echo "===================================="
-echo "1. Tao database + user"
-echo "2. Backup source"
-echo "3. Backup database"
-echo "4. Phuc hoi WordPress core"
-echo "5. Bao mat WordPress (hardening)"
-echo "6. Random SALT key"
-echo "7. Kiem tra permission sai"
+echo "=============================="
+echo "   WORDPRESS ULTRA TOOL"
+echo "=============================="
+echo "1. Backup source + DB (auto)"
+echo "2. Restore WordPress core"
+echo "3. Hardening WordPress"
+echo "4. Random SALT key"
+echo "5. Scan virus co ban"
+echo "6. Tao vhost nginx"
+echo "7. Cai SSL Let's Encrypt"
 echo "0. Thoat"
-echo "===================================="
-read -p "Chon chuc nang: " CHOICE
+echo "=============================="
+read -p "Chon: " CH
 
-case $CHOICE in
-1) create_db ;;
-2) backup_site ;;
-3) backup_db ;;
-4) restore_core ;;
-5) harden_wp ;;
-6) random_salt ;;
-7) check_permission ;;
+case $CH in
+1) backup_all ;;
+2) restore_core ;;
+3) harden_wp ;;
+4) random_salt ;;
+5) scan_virus ;;
+6) create_vhost ;;
+7) install_ssl ;;
 0) exit ;;
-*) echo "Lua chon sai!" ;;
+*) echo "Sai lua chon" ;;
 esac
 
 pause
