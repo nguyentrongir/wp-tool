@@ -137,6 +137,45 @@ self_update() {
     exit 0
 }
 
+deploy_git_theme_from_root() {
+    read -p "Nhap root web (vd: /var/www/html): " WEB
+    read -p "Nhap ten theme (vd: blocksy-child): " THEME_NAME
+
+    THEME_PATH="$WEB/wp-content/themes/$THEME_NAME"
+
+    if [ ! -d "$WEB/.git" ]; then
+        echo "❌ Thu muc root khong phai git repo"
+        return
+    fi
+
+    if [ ! -d "$THEME_PATH" ]; then
+        echo "❌ Khong tim thay theme: $THEME_PATH"
+        return
+    fi
+
+    echo "🚀 Deploy THEME (git o root, chi tac dong theme)..."
+
+    echo "🔓 Unlock theme..."
+    find "$THEME_PATH" -type d -exec chmod 755 {} \;
+    find "$THEME_PATH" -type f -exec chmod 644 {} \;
+
+    echo "📥 Dang git pull tai root..."
+    cd "$WEB" || return
+    git pull
+
+    if [ $? -ne 0 ]; then
+        echo "❌ Git pull that bai. Khong lock lai!"
+        return
+    fi
+
+    echo "🔒 Lock lai theme..."
+    find "$THEME_PATH" -type d -exec chmod 555 {} \;
+    find "$THEME_PATH" -type f -exec chmod 444 {} \;
+
+    echo "✅ Deploy theme thanh cong (root git → chi lock theme)"
+}
+
+
 # -------------------------------
 # Main Menu
 # -------------------------------
@@ -153,6 +192,7 @@ while true; do
     echo "4) 🔒 Lock WP Permissions"
     echo "5) 🔓 Unlock WP Permissions"
     echo "6) 🔄 Update wp-tool (branch ultra)"
+    echo "7) 🎨 Deploy THEME (git o root, chi tac dong theme)"
     echo "0) Exit"
     echo "-------------------------------"
     read -p "Chon: " choice
@@ -164,6 +204,7 @@ while true; do
         4) lock_wp_perm ;;
         5) unlock_wp_perm ;;
         6) self_update ;;
+        7) deploy_git_theme_from_root ;;
         0) exit 0 ;;
         *) echo "Lua chon khong hop le!" ;;
     esac
