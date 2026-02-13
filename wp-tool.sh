@@ -1,7 +1,9 @@
 #!/bin/bash
 
+VERSION="1.3.0-ultra"
 LOGFILE="/var/log/wp-ultra-tool.log"
 DATE=$(date +"%Y-%m-%d_%H-%M-%S")
+BRANCH_URL="https://raw.githubusercontent.com/nguyentrongir/wp-tool/refs/heads/ultra/wp-tool.sh"
 
 log() {
     echo "[$(date +"%F %T")] $1" | tee -a $LOGFILE
@@ -21,10 +23,13 @@ read_db_from_wpconfig() {
 backup_all() {
     read -p "Nhap folder web: " WEB
     read_db_from_wpconfig $WEB
+
     BACKUP_SRC="/root/backup_src_$DATE.tar.gz"
     BACKUP_DB="/root/backup_db_$DB_NAME_$DATE.sql"
+
     tar -czf $BACKUP_SRC $WEB
     mysqldump -u$DB_USER -p$DB_PASS $DB_NAME > $BACKUP_DB
+
     log "Backup source + DB: $WEB"
     echo "Backup OK:"
     echo $BACKUP_SRC
@@ -33,34 +38,34 @@ backup_all() {
 
 restore_core() {
     read -p "Nhap folder web: " WEB
-    echo "Xac nhan PHUC HOI CORE? (yes): "
-    read C
+    read -p "Xac nhan PHUC HOI CORE? (yes): " C
     [[ "$C" != "yes" ]] && return
+
     cd /tmp || exit
     wget -q https://wordpress.org/latest.tar.gz
     tar -xzf latest.tar.gz
+
     rm -rf $WEB/wp-admin
     rm -rf $WEB/wp-includes
     cp -r wordpress/wp-admin $WEB/
     cp -r wordpress/wp-includes $WEB/
     cp wordpress/*.php $WEB/
+
     log "Restore core $WEB"
     echo "Restore core xong"
 }
 
 harden_wp() {
     read -p "Nhap folder web: " WEB
+
     find $WEB -type d -exec chmod 755 {} \;
     find $WEB -type f -exec chmod 644 {} \;
+
     chmod 600 $WEB/wp-config.php
     chown -R www-data:www-data $WEB
-    cat > $WEB/.htaccess <<EOF
-Deny from all
-php_flag engine off
-EOF
-    sed -i "/ /root/virus_scan_$DATE.txt
-    log "Scan virus $WEB"
-    echo "Ket qua luu: /root/virus_scan_$DATE.txt"
+
+    log "Harden WP $WEB"
+    echo "Da harden WordPress"
 }
 
 # -------------------------------
@@ -71,58 +76,65 @@ lock_wp_perm() {
     read -p "Nhap folder web: " WEB
 
     if [ ! -d "$WEB" ]; then
-        echo "❌ Thư mục không tồn tại: $WEB"
+        echo "❌ Thu muc khong ton tai: $WEB"
         return
     fi
 
     echo "🔒 Lock permission WordPress..."
 
-    # Folder: 555
     find "$WEB" -type d -exec chmod 555 {} \;
-
-    # File: 444
     find "$WEB" -type f -exec chmod 444 {} \;
 
-    # wp-config.php: 400
-    if [ -f "$WEB/wp-config.php" ]; then
-        chmod 400 "$WEB/wp-config.php"
-    fi
+    [ -f "$WEB/wp-config.php" ] && chmod 400 "$WEB/wp-config.php"
+    [ -f "$WEB/.htaccess" ] && chmod 444 "$WEB/.htaccess"
 
-    # .htaccess: 444
-    if [ -f "$WEB/.htaccess" ]; then
-        chmod 444 "$WEB/.htaccess"
-    fi
-
-    echo "✅ Đã LOCK permission cho WordPress"
+    log "Lock permission $WEB"
+    echo "✅ Da LOCK permission"
 }
 
 unlock_wp_perm() {
     read -p "Nhap folder web: " WEB
 
     if [ ! -d "$WEB" ]; then
-        echo "❌ Thư mục không tồn tại: $WEB"
+        echo "❌ Thu muc khong ton tai: $WEB"
         return
     fi
 
     echo "🔓 Unlock permission WordPress..."
 
-    # Folder: 755
     find "$WEB" -type d -exec chmod 755 {} \;
-
-    # File: 644
     find "$WEB" -type f -exec chmod 644 {} \;
 
-    # wp-config.php: 640
-    if [ -f "$WEB/wp-config.php" ]; then
-        chmod 640 "$WEB/wp-config.php"
+    [ -f "$WEB/wp-config.php" ] && chmod 640 "$WEB/wp-config.php"
+    [ -f "$WEB/.htaccess" ] && chmod 644 "$WEB/.htaccess"
+
+    log "Unlock permission $WEB"
+    echo "✅ Da UNLOCK permission"
+}
+
+# -------------------------------
+# Self Update (branch ultra)
+# -------------------------------
+
+self_update() {
+    echo "🔄 Dang cap nhat wp-tool tu branch ultra..."
+
+    TMP_FILE="/tmp/wp-tool.sh"
+
+    wget -q -O "$TMP_FILE" "$BRANCH_URL"
+
+    if [ $? -ne 0 ]; then
+        echo "❌ Tai file that bai"
+        return
     fi
 
-    # .htaccess: 644
-    if [ -f "$WEB/.htaccess" ]; then
-        chmod 644 "$WEB/.htaccess"
-    fi
+    chmod +x "$TMP_FILE"
+    cp "$TMP_FILE" "$0"
 
-    echo "✅ Đã UNLOCK permission cho WordPress"
+    log "Self update wp-tool from ultra"
+    echo "✅ Cap nhat thanh cong"
+    echo "👉 Hay chay lai: $0"
+    exit 0
 }
 
 # -------------------------------
@@ -133,17 +145,14 @@ while true; do
     clear
     echo "==============================="
     echo "   WP Ultra Tool - WordPress   "
+    echo "   Version: $VERSION"
     echo "==============================="
     echo "1) Backup All"
     echo "2) Restore Core"
     echo "3) Harden WP"
-    echo "4) Create vhost"
-    echo "5) Remove vhost"
-    echo "6) Update WP"
-    echo "7) Scan Virus"
-    echo "8) Info WP"
-    echo "9) 🔒 Lock WP Permissions"
-    echo "10) 🔓 Unlock WP Permissions"
+    echo "4) 🔒 Lock WP Permissions"
+    echo "5) 🔓 Unlock WP Permissions"
+    echo "6) 🔄 Update wp-tool (branch ultra)"
     echo "0) Exit"
     echo "-------------------------------"
     read -p "Chon: " choice
@@ -152,10 +161,12 @@ while true; do
         1) backup_all ;;
         2) restore_core ;;
         3) harden_wp ;;
-        9) lock_wp_perm ;;
-        10) unlock_wp_perm ;;
+        4) lock_wp_perm ;;
+        5) unlock_wp_perm ;;
+        6) self_update ;;
         0) exit 0 ;;
         *) echo "Lua chon khong hop le!" ;;
     esac
+
     pause
 done
