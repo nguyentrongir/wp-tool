@@ -5,4 +5,6 @@ Tải file về
 Chmod +x
 Chạy
 
+Nên dùng git config core.fileMode false
+
 Nền tảng: Linux 
