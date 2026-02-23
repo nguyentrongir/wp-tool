@@ -113,6 +113,85 @@ unlock_wp_perm() {
 }
 
 # -------------------------------
+# WP-CLI Functions
+# -------------------------------
+
+check_install_wpcli() {
+    if command -v wp >/dev/null 2>&1; then
+        echo "✅ WP-CLI da ton tai:"
+        wp --version
+    else
+        echo "❌ Chua co WP-CLI. Dang cai..."
+        curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+        chmod +x wp-cli.phar
+        mv wp-cli.phar /usr/local/bin/wp
+        echo "✅ Da cai WP-CLI:"
+        wp --version
+    fi
+}
+
+update_wpcli() {
+    if command -v wp >/dev/null 2>&1; then
+        echo "🔄 Dang update WP-CLI..."
+        wp cli update --yes --allow-root
+        wp --version
+    else
+        echo "❌ Chua co WP-CLI. Tien hanh cai moi..."
+        check_install_wpcli
+    fi
+}
+
+install_plugin_menu() {
+    read -p "Nhap folder web: " WEB
+
+    if [ ! -d "$WEB" ]; then
+        echo "❌ Thu muc khong ton tai: $WEB"
+        return
+    fi
+
+    check_install_wpcli
+
+    echo "Chon cach cai plugin:"
+    echo "1) Cai tu thu vien WordPress"
+    echo "2) Cai tu file ZIP"
+    read -p "Lua chon: " OPT
+
+    echo "🔓 Unlock permission de cai plugin..."
+    find "$WEB" -type d -exec chmod 755 {} \;
+    find "$WEB" -type f -exec chmod 644 {} \;
+    [ -f "$WEB/wp-config.php" ] && chmod 640 "$WEB/wp-config.php"
+
+    cd "$WEB" || return
+
+    case $OPT in
+        1)
+            read -p "Nhap ten plugin (vd: wordfence): " PLUGIN
+            wp plugin install "$PLUGIN" --activate --allow-root
+            ;;
+        2)
+            read -p "Nhap duong dan file zip (vd: /root/plugin.zip): " ZIPFILE
+            if [ ! -f "$ZIPFILE" ]; then
+                echo "❌ File zip khong ton tai!"
+                return
+            fi
+            wp plugin install "$ZIPFILE" --activate --allow-root
+            ;;
+        *)
+            echo "Lua chon khong hop le!"
+            return
+            ;;
+    esac
+
+    echo "🔒 Lock lai permission..."
+    find "$WEB" -type d -exec chmod 555 {} \;
+    find "$WEB" -type f -exec chmod 444 {} \;
+    [ -f "$WEB/wp-config.php" ] && chmod 400 "$WEB/wp-config.php"
+
+    log "Install plugin on $WEB"
+    echo "✅ Cai plugin xong va da lock lai"
+}
+
+# -------------------------------
 # Self Update (branch ultra)
 # -------------------------------
 
@@ -193,6 +272,9 @@ while true; do
     echo "5) 🔓 Unlock WP Permissions"
     echo "6) 🔄 Update wp-tool (branch ultra)"
     echo "7) 🎨 Deploy THEME (git o root, chi tac dong theme)"
+    echo "8) 📦 Cai / Kiem tra WP-CLI"
+    echo "9) 🔄 Update WP-CLI"
+    echo "10) 🔌 Cai Plugin (auto unlock/lock)"
     echo "0) Exit"
     echo "-------------------------------"
     read -p "Chon: " choice
@@ -205,7 +287,12 @@ while true; do
         5) unlock_wp_perm ;;
         6) self_update ;;
         7) deploy_git_theme_from_root ;;
+        8) check_install_wpcli ;;
+        9) update_wpcli ;;
+        10) install_plugin_menu ;;
         0) exit 0 ;;
+        
+      
         *) echo "Lua chon khong hop le!" ;;
     esac
 
