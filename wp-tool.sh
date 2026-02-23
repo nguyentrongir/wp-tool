@@ -119,14 +119,14 @@ unlock_wp_perm() {
 check_install_wpcli() {
     if command -v wp >/dev/null 2>&1; then
         echo "✅ WP-CLI da ton tai:"
-        wp --version
+        wp --version --allow-root
     else
         echo "❌ Chua co WP-CLI. Dang cai..."
         curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
         chmod +x wp-cli.phar
         mv wp-cli.phar /usr/local/bin/wp
         echo "✅ Da cai WP-CLI:"
-        wp --version
+        wp --version --allow-root
     fi
 }
 
@@ -134,7 +134,7 @@ update_wpcli() {
     if command -v wp >/dev/null 2>&1; then
         echo "🔄 Dang update WP-CLI..."
         wp cli update --yes --allow-root
-        wp --version
+        wp --version --allow-root
     else
         echo "❌ Chua co WP-CLI. Tien hanh cai moi..."
         check_install_wpcli
